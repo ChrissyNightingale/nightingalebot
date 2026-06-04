@@ -676,6 +676,34 @@ async function postAllCurrentMerch() {
   }
 }
 
+async function simulateJoinWelcome(username) {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${cfg.guildId}/members/search?query=${encodeURIComponent(username)}&limit=10`,
+    {
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`member search ${res.status}: ${await res.text()}`);
+  const hits = await res.json();
+  if (!hits.length) throw new Error(`no member matched "${username}"`);
+  const target = hits[0];
+  const guildName = await fetchGuildName();
+  await discordPost(cfg.welcomeChannelId, {
+    content:
+      `Hey <@${target.user.id}>, welcome to **${guildName}**! ` +
+      `Please visit <#${cfg.rulesChannelId}> to verify and gain access ` +
+      `to the rest of the server!`,
+    mentionUsers: [target.user.id],
+  });
+  console.log(
+    `[joins:sim] welcomed ${target.user.username} (${target.user.id})`
+  );
+}
+
 async function simulateTwitchLive() {
   await discordPost(cfg.twitchChannelId, {
     content: '🔴 Chrissy Nightingale is LIVE on Twitch! _(simulation)_',
@@ -696,6 +724,12 @@ async function main() {
   // Twitch posting path lands without waiting for a real stream.
   if (process.env.SIMULATE_TWITCH === '1') {
     await simulateTwitchLive();
+    return;
+  }
+
+  // One-off: fire the join-welcome message at a specific user by username.
+  if (process.env.WELCOME_USER) {
+    await simulateJoinWelcome(process.env.WELCOME_USER);
     return;
   }
 

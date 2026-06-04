@@ -39,6 +39,11 @@ on:
         required: false
         default: false
         type: boolean
+      welcome_user:
+        description: 'One-off: send the join-welcome message to a specific username.'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -69,6 +74,7 @@ jobs:
           POST_ALL_MERCH: ${{ inputs.post_all_merch && '1' || '0' }}
           LIST_ROLES: ${{ inputs.list_roles && '1' || '0' }}
           LIST_CHANNELS: ${{ inputs.list_channels && '1' || '0' }}
+          WELCOME_USER: ${{ inputs.welcome_user }}
         run: node src/index.js
 
       - name: Commit state changes
