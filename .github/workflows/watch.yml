@@ -44,6 +44,11 @@ on:
         required: false
         default: ''
         type: string
+      post_rules:
+        description: 'One-off: post the server rules to #rules and seed the checkmark reaction.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -75,6 +80,7 @@ jobs:
           LIST_ROLES: ${{ inputs.list_roles && '1' || '0' }}
           LIST_CHANNELS: ${{ inputs.list_channels && '1' || '0' }}
           WELCOME_USER: ${{ inputs.welcome_user }}
+          POST_RULES: ${{ inputs.post_rules && '1' || '0' }}
         run: node src/index.js
 
       - name: Commit state changes

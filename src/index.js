@@ -58,6 +58,7 @@ const DEFAULT_STATE = {
   merch: { lastProductSlugs: [] },
   verified: { knownMemberIds: [] },
   joins: { knownMemberIds: [] },
+  rules: { messageId: null },
 };
 
 async function loadState() {
@@ -70,6 +71,7 @@ async function loadState() {
     s.merch ??= { lastProductSlugs: [] };
     s.verified ??= { knownMemberIds: [] };
     s.joins ??= { knownMemberIds: [] };
+    s.rules ??= { messageId: null };
     s.youtube.lastVideoIds ??= [];
     s.spotify.lastAlbumIds ??= [];
     s.merch.lastProductSlugs ??= [];
@@ -481,6 +483,172 @@ async function checkVerifiedWelcome(state) {
   }
 }
 
+// ------------------------------------------------------- Rules & verify ---
+
+const RULES_EMOJI = '✅';
+
+function buildRulesBody(guildName) {
+  return [
+    `📜 **Server Rules**`,
+    `Welcome to **${guildName}**! Read these, then react with ${RULES_EMOJI} to verify and gain access to the rest of the server.`,
+    ``,
+    `😃 **1. Be cool, kind, and respectful**`,
+    `Treat everyone the way you'd want to be treated. Constructive disagreement is fine — personal attacks are not.`,
+    ``,
+    `📇 **2. Keep your Discord profile appropriate**`,
+    `Display name, avatar, and bio must be SFW and non-offensive. No impersonation.`,
+    ``,
+    `✉️ **3. Do not spam**`,
+    `No wall-of-text, excessive caps, mass mentions, copy-paste, or unsolicited DMs.`,
+    ``,
+    `🛡️ **4. No personal information**`,
+    `Yours or anyone else's. Don't share addresses, phone numbers, emails, or private screenshots.`,
+    ``,
+    `🤬 **5. No homophobia, transphobia, or hate speech**`,
+    `Includes racism, sexism, ableism, or slurs of any kind. Zero tolerance.`,
+    ``,
+    `🏛️ **6. No political or religious topics**`,
+    `Keep the lane musical and chill.`,
+    ``,
+    `🚨 **7. No piracy, sexual, NSFW, or otherwise suspicious content**`,
+    `No porn, gore, leaked content, illegal downloads, scams, or anything that violates Discord's TOS.`,
+    ``,
+    `🤔 **8. Rules are subject to common sense**`,
+    `If it feels off, it probably is. Mods have final say. Rules may be updated at any time.`,
+    ``,
+    `${RULES_EMOJI} **React below with the green checkmark** to confirm you've read & agree to these rules. You'll instantly gain the **@Verified** role and full server access.`,
+  ].join('\n');
+}
+
+async function postRulesMessage(state) {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const guildName = await fetchGuildName();
+  const content = buildRulesBody(guildName);
+
+  const postRes = await fetch(
+    `https://discord.com/api/v10/channels/${cfg.rulesChannelId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+    }
+  );
+  if (!postRes.ok) {
+    throw new Error(`rules post ${postRes.status}: ${await postRes.text()}`);
+  }
+  const msg = await postRes.json();
+
+  // Seed the green checkmark reaction so members can click rather than type.
+  const reactRes = await fetch(
+    `https://discord.com/api/v10/channels/${cfg.rulesChannelId}/messages/${msg.id}/reactions/${encodeURIComponent(RULES_EMOJI)}/@me`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  if (!reactRes.ok) {
+    console.warn(
+      `[rules] could not seed reaction (${reactRes.status}): ${await reactRes.text()}`
+    );
+  }
+
+  state.rules.messageId = msg.id;
+  console.log(`[rules] posted message ${msg.id}`);
+}
+
+async function fetchReactionUsers(channelId, messageId, emoji) {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const users = [];
+  let after = '0';
+  for (let page = 0; page < 50; page++) {
+    const res = await fetch(
+      `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}?limit=100&after=${after}`,
+      {
+        headers: {
+          Authorization: `Bot ${token}`,
+          'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+        },
+      }
+    );
+    if (!res.ok) throw new Error(`reactions ${res.status}: ${await res.text()}`);
+    const batch = await res.json();
+    if (!batch.length) break;
+    users.push(...batch);
+    if (batch.length < 100) break;
+    after = batch[batch.length - 1].id;
+  }
+  return users;
+}
+
+async function grantVerifiedRole(userId) {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${cfg.guildId}/members/${userId}/roles/${cfg.verifiedRoleId}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  // 204 success; 403 = bot lacks Manage Roles or sits below @Verified.
+  return res.status;
+}
+
+async function checkRulesReactions(state) {
+  if (!state.rules.messageId) {
+    console.log('[rules] no rules message recorded — run post_rules first');
+    return;
+  }
+
+  let reactors;
+  try {
+    reactors = await fetchReactionUsers(
+      cfg.rulesChannelId,
+      state.rules.messageId,
+      RULES_EMOJI
+    );
+  } catch (e) {
+    // If the rules message was deleted, drop the pointer so a future post_rules
+    // run can replace it.
+    if (/40[34]/.test(e.message)) {
+      console.warn(`[rules] message gone (${e.message}) — clearing state`);
+      state.rules.messageId = null;
+      return;
+    }
+    throw e;
+  }
+
+  const verified = new Set(state.verified.knownMemberIds);
+  let granted = 0;
+  for (const u of reactors) {
+    if (u.bot || u.id === state.botId) continue;
+    if (verified.has(u.id)) continue;
+    const status = await grantVerifiedRole(u.id);
+    if (status === 204) {
+      console.log(`[rules] granted @Verified to ${u.username || u.id}`);
+      granted++;
+    } else if (status === 403) {
+      console.error(
+        `[rules] 403 granting ${u.id} — bot needs Manage Roles and a role above @Verified`
+      );
+    } else {
+      console.log(`[rules] grant ${u.id} -> HTTP ${status}`);
+    }
+  }
+  if (granted) {
+    console.log(`[rules] total grants this tick: ${granted}`);
+  }
+}
+
 // --------------------------------------------------------- Join welcome ---
 
 async function checkJoinWelcome(state) {
@@ -733,6 +901,16 @@ async function main() {
     return;
   }
 
+  // One-off: post (or re-post) the server rules to the rules channel with the
+  // green-checkmark reaction pre-seeded. Stores the new message ID so the
+  // reaction-role grant path can monitor it.
+  if (process.env.POST_RULES === '1') {
+    const s = await loadState();
+    await postRulesMessage(s);
+    await saveState(s);
+    return;
+  }
+
   // One-off: dump every guild role + ID + mentionable flag to logs.
   if (process.env.LIST_ROLES === '1') {
     await listGuildRoles();
@@ -759,6 +937,9 @@ async function main() {
     ['twitch', checkTwitch],
     ['merch', checkMerch],
     ['joins', checkJoinWelcome],
+    // Grant @Verified to anyone who reacted to the rules before the verified
+    // check runs, so newly-granted members get welcomed in the same tick.
+    ['rules', checkRulesReactions],
     ['verified', checkVerifiedWelcome],
   ];
 
