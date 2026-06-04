@@ -36,6 +36,7 @@ const cfg = {
     announcements: '1507600835146682439',
     livestreams: '1507600833645121606',
     youtube: '1508008798927847425',
+    productUpdates: '1507600825688527019',
   },
 };
 
@@ -466,6 +467,7 @@ async function checkMerch(state) {
       meta.price ? `**$${meta.price}** ${meta.currency}` : null;
     await discordPost(cfg.merchChannelId, {
       content: '🛍️ New merch from Chrissy Nightingale!',
+      mentionRoles: [cfg.roles.productUpdates],
       embed: {
         title: meta.title,
         url: meta.url,
