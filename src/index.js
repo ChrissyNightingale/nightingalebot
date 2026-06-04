@@ -18,6 +18,7 @@ const cfg = {
   welcomeChannelId: '1476195654761189489',
   reactionRolesChannelId: '1476730021837144124',
   generalChannelId: '1475433666682290240',
+  rulesChannelId: '1476202330222231675',
   verifiedRoleId: '1476268190454513898',
   spotifyArtistId: '0eIGTeyCGI7ztWfLBd0v4Y',
   youtubeHandle: 'ChrissyNightingale',
@@ -56,6 +57,7 @@ const DEFAULT_STATE = {
   twitch: { isLive: false, lastStreamId: null },
   merch: { lastProductSlugs: [] },
   verified: { knownMemberIds: [] },
+  joins: { knownMemberIds: [] },
 };
 
 async function loadState() {
@@ -67,10 +69,12 @@ async function loadState() {
     s.twitch ??= { isLive: false, lastStreamId: null };
     s.merch ??= { lastProductSlugs: [] };
     s.verified ??= { knownMemberIds: [] };
+    s.joins ??= { knownMemberIds: [] };
     s.youtube.lastVideoIds ??= [];
     s.spotify.lastAlbumIds ??= [];
     s.merch.lastProductSlugs ??= [];
     s.verified.knownMemberIds ??= [];
+    s.joins.knownMemberIds ??= [];
     return s;
   } catch {
     return structuredClone(DEFAULT_STATE);
@@ -397,7 +401,19 @@ async function checkTwitch(state) {
   }
 }
 
-// ----------------------------------------------------- Verified welcome ---
+// ---------------------------------------------------------- Members API ---
+
+async function fetchGuildName() {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(`https://discord.com/api/v10/guilds/${cfg.guildId}`, {
+    headers: {
+      Authorization: `Bot ${token}`,
+      'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+    },
+  });
+  if (!res.ok) throw new Error(`Discord guild ${res.status}: ${await res.text()}`);
+  return (await res.json()).name;
+}
 
 // Pull every guild member, paginating through /members (max 1000 per page).
 async function fetchAllGuildMembers() {
@@ -462,6 +478,40 @@ async function checkVerifiedWelcome(state) {
       mentionUsers: [userId],
     });
     console.log(`[verified] welcomed ${userId}`);
+  }
+}
+
+// --------------------------------------------------------- Join welcome ---
+
+async function checkJoinWelcome(state) {
+  const members = await fetchAllGuildMembers();
+  const guildName = await fetchGuildName();
+  const ids = members.filter((m) => !m.user.bot).map((m) => m.user.id);
+
+  const known = new Set(state.joins.knownMemberIds);
+  const isSeed = state.joins.knownMemberIds.length === 0;
+  const newJoins = ids.filter((id) => !known.has(id));
+
+  // Snapshot current roster — drops anyone who left, so a rejoin gets a
+  // fresh welcome.
+  state.joins.knownMemberIds = ids;
+
+  if (isSeed) {
+    console.log(
+      `[joins] seeded ${ids.length} members (no welcomes on first run)`
+    );
+    return;
+  }
+
+  for (const userId of newJoins) {
+    await discordPost(cfg.welcomeChannelId, {
+      content:
+        `Hey <@${userId}>, welcome to **${guildName}**! ` +
+        `Please visit <#${cfg.rulesChannelId}> to verify and gain access ` +
+        `to the rest of the server!`,
+      mentionUsers: [userId],
+    });
+    console.log(`[joins] welcomed ${userId}`);
   }
 }
 
@@ -674,6 +724,7 @@ async function main() {
     ['spotify', checkSpotify],
     ['twitch', checkTwitch],
     ['merch', checkMerch],
+    ['joins', checkJoinWelcome],
     ['verified', checkVerifiedWelcome],
   ];
 

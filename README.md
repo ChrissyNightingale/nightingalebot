@@ -14,6 +14,7 @@ persisted in `state.json` and committed back to the repo each tick.
 | YouTube  | New video upload                            | Music & Videos        |
 | Twitch   | Stream goes live                            | Twitch Live Streams   |
 | Merch    | New product on chrissynightingale.com       | Merch                 |
+| Joins    | Member joins the guild                      | welcome-channel       |
 | Verified | Member gains the @Verified role             | welcome-channel       |
 
 The Verified welcome path requires the **Server Members Intent** to be enabled
