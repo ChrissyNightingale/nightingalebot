@@ -12,7 +12,10 @@ const STATE_PATH = path.join(__dirname, '..', 'state.json');
 
 const cfg = {
   guildId: '1475433665537511536',
-  musicChannelId: '1476195529129066721',
+  // YouTube uploads + Spotify releases + Twitch live all land in
+  // #social-media. The channel was previously #live (twitch-only); renamed
+  // and now used for all three.
+  musicChannelId: '1476199961543708774',
   twitchChannelId: '1476199961543708774',
   merchChannelId: '1511951314895241356',
   welcomeChannelId: '1476195654761189489',
