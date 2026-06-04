@@ -1,10 +1,17 @@
 {
   "youtube": {
-    "channelId": null,
+    "channelId": "UCl1vGBWY-wtLsYAi9faSBrw",
     "lastVideoIds": []
   },
   "spotify": {
-    "lastAlbumIds": []
+    "lastAlbumIds": [
+      "5cbUJABvg8OLfY95ApZ8Oy",
+      "6Lq7V2dhefof3OdwhTiPWT",
+      "2l6LZiOzwc0kSCH3ZVP2Wu",
+      "7qzEckXhqBUy7DR3302xPE",
+      "2QKFqgyIUMVGO4lHFS0EKO",
+      "1sxjkrMaPuxKfDQie4ylqo"
+    ]
   },
   "twitch": {
     "isLive": false,
