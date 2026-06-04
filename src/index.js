@@ -461,6 +461,24 @@ async function checkMerch(state) {
 
 // ------------------------------------------------------------------- Main ---
 
+async function listGuildRoles() {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${cfg.guildId}/roles`,
+    {
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`Discord roles ${res.status}: ${await res.text()}`);
+  const roles = await res.json();
+  for (const r of roles) {
+    console.log(`[role] ${r.id}  ${r.name}  mentionable=${r.mentionable}`);
+  }
+}
+
 async function postAllCurrentMerch() {
   const slugs = await fetchProductSlugs();
   // Post in storefront display order: sitemap lists newest first; flip so the
@@ -503,6 +521,12 @@ async function main() {
   // Twitch posting path lands without waiting for a real stream.
   if (process.env.SIMULATE_TWITCH === '1') {
     await simulateTwitchLive();
+    return;
+  }
+
+  // One-off: dump every guild role + ID + mentionable flag to logs.
+  if (process.env.LIST_ROLES === '1') {
+    await listGuildRoles();
     return;
   }
 
