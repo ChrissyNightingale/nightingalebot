@@ -215,5 +215,15 @@
   },
   "rules": {
     "messageId": "1511960839014318082"
+  },
+  "reactionRoles": {
+    "instruments": {
+      "messageId": "1511963402338304030",
+      "lastReactors": {}
+    },
+    "notifications": {
+      "messageId": null,
+      "lastReactors": {}
+    }
   }
 }
