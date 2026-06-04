@@ -15,6 +15,10 @@ const cfg = {
   musicChannelId: '1476195529129066721',
   twitchChannelId: '1476199961543708774',
   merchChannelId: '1511951314895241356',
+  welcomeChannelId: '1476195654761189489',
+  reactionRolesChannelId: '1476730021837144124',
+  generalChannelId: '1475433666682290240',
+  verifiedRoleId: '1476268190454513898',
   spotifyArtistId: '0eIGTeyCGI7ztWfLBd0v4Y',
   youtubeHandle: 'ChrissyNightingale',
   twitchLogin: 'chrissynightingale',
@@ -51,6 +55,7 @@ const DEFAULT_STATE = {
   spotify: { lastAlbumIds: [] },
   twitch: { isLive: false, lastStreamId: null },
   merch: { lastProductSlugs: [] },
+  verified: { knownMemberIds: [] },
 };
 
 async function loadState() {
@@ -61,9 +66,11 @@ async function loadState() {
     s.spotify ??= { lastAlbumIds: [] };
     s.twitch ??= { isLive: false, lastStreamId: null };
     s.merch ??= { lastProductSlugs: [] };
+    s.verified ??= { knownMemberIds: [] };
     s.youtube.lastVideoIds ??= [];
     s.spotify.lastAlbumIds ??= [];
     s.merch.lastProductSlugs ??= [];
+    s.verified.knownMemberIds ??= [];
     return s;
   } catch {
     return structuredClone(DEFAULT_STATE);
@@ -78,7 +85,13 @@ async function saveState(s) {
 
 async function discordPost(
   channelId,
-  { content, embed, mentionEveryone = false, mentionRoles = [] }
+  {
+    content,
+    embed,
+    mentionEveryone = false,
+    mentionRoles = [],
+    mentionUsers = [],
+  }
 ) {
   const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
   // Prepend role pings to the message body so the role rendering sits above
@@ -92,6 +105,7 @@ async function discordPost(
   const allowed_mentions = { parse: [] };
   if (mentionEveryone) allowed_mentions.parse = ['everyone'];
   if (mentionRoles.length) allowed_mentions.roles = mentionRoles;
+  if (mentionUsers.length) allowed_mentions.users = mentionUsers;
 
   const body = { content: body_content, allowed_mentions };
   if (embed) body.embeds = [embed];
@@ -383,6 +397,74 @@ async function checkTwitch(state) {
   }
 }
 
+// ----------------------------------------------------- Verified welcome ---
+
+// Pull every guild member, paginating through /members (max 1000 per page).
+async function fetchAllGuildMembers() {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const out = [];
+  let after = '0';
+  for (let page = 0; page < 100; page++) {
+    const res = await fetch(
+      `https://discord.com/api/v10/guilds/${cfg.guildId}/members?limit=1000&after=${after}`,
+      {
+        headers: {
+          Authorization: `Bot ${token}`,
+          'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+        },
+      }
+    );
+    if (!res.ok) {
+      const txt = await res.text();
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(
+          `Discord members ${res.status} — likely missing "Server Members Intent". ${txt}`
+        );
+      }
+      throw new Error(`Discord members ${res.status}: ${txt}`);
+    }
+    const batch = await res.json();
+    if (!batch.length) break;
+    out.push(...batch);
+    if (batch.length < 1000) break;
+    after = batch[batch.length - 1].user.id;
+  }
+  return out;
+}
+
+async function checkVerifiedWelcome(state) {
+  const members = await fetchAllGuildMembers();
+  // Filter to members that currently have the @Verified role and are not bots.
+  const verifiedIds = members
+    .filter((m) => !m.user.bot && (m.roles || []).includes(cfg.verifiedRoleId))
+    .map((m) => m.user.id);
+
+  const known = new Set(state.verified.knownMemberIds);
+  const isSeed = state.verified.knownMemberIds.length === 0;
+  const newly = verifiedIds.filter((id) => !known.has(id));
+
+  // Refresh known set to the current snapshot — handles role losses cleanly
+  // (a user who lost @Verified and re-earns it gets a fresh welcome).
+  state.verified.knownMemberIds = verifiedIds;
+
+  if (isSeed) {
+    console.log(
+      `[verified] seeded ${verifiedIds.length} currently-verified members (no welcomes on first run)`
+    );
+    return;
+  }
+
+  for (const userId of newly) {
+    await discordPost(cfg.welcomeChannelId, {
+      content:
+        `Hey <@${userId}>, consider visiting <#${cfg.reactionRolesChannelId}> ` +
+        `and introduce yourself in <#${cfg.generalChannelId}>!`,
+      mentionUsers: [userId],
+    });
+    console.log(`[verified] welcomed ${userId}`);
+  }
+}
+
 // ------------------------------------------------------------------ Merch ---
 
 // Fetch the storefront sitemap and extract every /products/<slug> URL. The
@@ -592,6 +674,7 @@ async function main() {
     ['spotify', checkSpotify],
     ['twitch', checkTwitch],
     ['merch', checkMerch],
+    ['verified', checkVerifiedWelcome],
   ];
 
   let failures = 0;

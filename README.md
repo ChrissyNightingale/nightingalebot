@@ -8,12 +8,17 @@ persisted in `state.json` and committed back to the repo each tick.
 
 ## What it posts
 
-| Source  | Trigger                                     | Posts to              |
-|---------|---------------------------------------------|-----------------------|
-| Spotify | New album / single appears                  | Music & Videos        |
-| YouTube | New video upload                            | Music & Videos        |
-| Twitch  | Stream goes live                            | Twitch Live Streams   |
-| Merch   | New product on chrissynightingale.com       | Merch                 |
+| Source   | Trigger                                     | Posts to              |
+|----------|---------------------------------------------|-----------------------|
+| Spotify  | New album / single appears                  | Music & Videos        |
+| YouTube  | New video upload                            | Music & Videos        |
+| Twitch   | Stream goes live                            | Twitch Live Streams   |
+| Merch    | New product on chrissynightingale.com       | Merch                 |
+| Verified | Member gains the @Verified role             | welcome-channel       |
+
+The Verified welcome path requires the **Server Members Intent** to be enabled
+in the Discord Developer Portal → NightingaleBot → Bot tab → Privileged Gateway
+Intents. Without it, the members endpoint returns only the bot itself.
 
 Twitch posts fire on the transition `offline → live` only. Stream end is
 recorded silently (no spam on ending).
