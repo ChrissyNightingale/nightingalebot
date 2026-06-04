@@ -14,12 +14,20 @@ const cfg = {
   guildId: '1475433665537511536',
   musicChannelId: '1476195529129066721',
   twitchChannelId: '1476199961543708774',
+  merchChannelId: '1511951314895241356',
   spotifyArtistId: '0eIGTeyCGI7ztWfLBd0v4Y',
   youtubeHandle: 'ChrissyNightingale',
   twitchLogin: 'chrissynightingale',
+  merchSitemapUrl: 'https://chrissynightingale.com/sitemap.xml',
   market: 'US',
   // Color palette per source — Discord embed bar color.
-  colors: { youtube: 0xFF0000, spotify: 0x1DB954, twitch: 0x9146FF, release: 0xFF3366 },
+  colors: {
+    youtube: 0xFF0000,
+    spotify: 0x1DB954,
+    twitch: 0x9146FF,
+    release: 0xFF3366,
+    merch: 0xFFB400,
+  },
 };
 
 const env = (k) => {
@@ -32,6 +40,7 @@ const DEFAULT_STATE = {
   youtube: { channelId: null, lastVideoIds: [] },
   spotify: { lastAlbumIds: [] },
   twitch: { isLive: false, lastStreamId: null },
+  merch: { lastProductSlugs: [] },
 };
 
 async function loadState() {
@@ -41,8 +50,10 @@ async function loadState() {
     s.youtube ??= { channelId: null, lastVideoIds: [] };
     s.spotify ??= { lastAlbumIds: [] };
     s.twitch ??= { isLive: false, lastStreamId: null };
+    s.merch ??= { lastProductSlugs: [] };
     s.youtube.lastVideoIds ??= [];
     s.spotify.lastAlbumIds ??= [];
+    s.merch.lastProductSlugs ??= [];
     return s;
   } catch {
     return structuredClone(DEFAULT_STATE);
@@ -349,6 +360,105 @@ async function checkTwitch(state) {
   }
 }
 
+// ------------------------------------------------------------------ Merch ---
+
+// Fetch the storefront sitemap and extract every /products/<slug> URL. The
+// sitemap is gzip-encoded by Fourthwall; Node's fetch auto-decompresses when
+// Accept-Encoding negotiation succeeds.
+async function fetchProductSlugs() {
+  const res = await fetch(cfg.merchSitemapUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 NightingaleBot',
+      'Accept-Encoding': 'gzip, deflate',
+    },
+  });
+  if (!res.ok) throw new Error(`merch sitemap ${res.status}`);
+  const xml = await res.text();
+  const slugs = [
+    ...xml.matchAll(/<loc>https:\/\/chrissynightingale\.com\/products\/([^<]+)<\/loc>/g),
+  ].map((m) => m[1]);
+  // Preserve order of appearance; sitemap puts newest products near the top.
+  return [...new Set(slugs)];
+}
+
+async function fetchProductMeta(slug) {
+  const url = `https://chrissynightingale.com/products/${slug}`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 NightingaleBot' },
+  });
+  if (!res.ok) return { url, title: slug, image: null, description: null };
+  const html = await res.text();
+  const pick = (re) => {
+    const m = html.match(re);
+    return m ? m[1] : null;
+  };
+  const decode = (s) =>
+    s
+      ?.replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'") || null;
+  const title =
+    decode(pick(/<meta\s+property="og:title"\s+content="([^"]+)"/)) || slug;
+  const image = pick(/<meta\s+property="og:image"\s+content="([^"]+)"/);
+  const description = decode(
+    pick(/<meta\s+property="og:description"\s+content="([^"]+)"/)
+  );
+  const price =
+    pick(/<meta\s+property="(?:product:price:amount|og:price:amount)"\s+content="([^"]+)"/);
+  const currency =
+    pick(
+      /<meta\s+property="(?:product:price:currency|og:price:currency)"\s+content="([^"]+)"/
+    ) || 'USD';
+  return { url, title, image, description, price, currency };
+}
+
+async function checkMerch(state) {
+  const slugs = await fetchProductSlugs();
+  if (slugs.length === 0) throw new Error('merch sitemap: no products parsed');
+
+  const seen = new Set(state.merch.lastProductSlugs);
+  const isSeed = state.merch.lastProductSlugs.length === 0;
+  const fresh = [];
+
+  for (const slug of slugs) {
+    if (seen.has(slug)) continue;
+    if (isSeed) {
+      state.merch.lastProductSlugs.push(slug);
+    } else {
+      fresh.push(slug);
+    }
+  }
+  state.merch.lastProductSlugs = state.merch.lastProductSlugs.slice(-200);
+
+  if (isSeed) {
+    console.log(`[merch] seeded ${slugs.length} products (no posts on first run)`);
+    return;
+  }
+
+  // Post oldest first so they read in append order.
+  for (const slug of fresh.reverse()) {
+    const meta = await fetchProductMeta(slug);
+    const priceLine =
+      meta.price ? `**$${meta.price}** ${meta.currency}` : null;
+    await discordPost(cfg.merchChannelId, {
+      content: '🛍️ New merch from Chrissy Nightingale!',
+      embed: {
+        title: meta.title,
+        url: meta.url,
+        description: [priceLine, meta.description].filter(Boolean).join('\n\n') || undefined,
+        color: cfg.colors.merch,
+        image: meta.image ? { url: meta.image } : undefined,
+        footer: { text: 'chrissynightingale.com' },
+      },
+    });
+    state.merch.lastProductSlugs.push(slug);
+    console.log(`[merch] posted ${slug}`);
+  }
+  state.merch.lastProductSlugs = state.merch.lastProductSlugs.slice(-200);
+}
+
 // ------------------------------------------------------------------- Main ---
 
 async function simulateTwitchLive() {
@@ -378,6 +488,7 @@ async function main() {
     ['youtube', checkYouTube],
     ['spotify', checkSpotify],
     ['twitch', checkTwitch],
+    ['merch', checkMerch],
   ];
 
   let failures = 0;

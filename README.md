@@ -8,11 +8,12 @@ persisted in `state.json` and committed back to the repo each tick.
 
 ## What it posts
 
-| Source  | Trigger                    | Posts to              |
-|---------|----------------------------|-----------------------|
-| Spotify | New album / single appears | Music & Videos        |
-| YouTube | New video upload           | Music & Videos        |
-| Twitch  | Stream goes live           | Twitch Live Streams   |
+| Source  | Trigger                                     | Posts to              |
+|---------|---------------------------------------------|-----------------------|
+| Spotify | New album / single appears                  | Music & Videos        |
+| YouTube | New video upload                            | Music & Videos        |
+| Twitch  | Stream goes live                            | Twitch Live Streams   |
+| Merch   | New product on chrissynightingale.com       | Merch                 |
 
 Twitch posts fire on the transition `offline → live` only. Stream end is
 recorded silently (no spam on ending).
