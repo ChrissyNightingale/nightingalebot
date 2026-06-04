@@ -24,6 +24,11 @@ on:
         required: false
         default: false
         type: boolean
+      post_all_merch:
+        description: 'One-off: post every current product on the storefront to the merch channel.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -51,6 +56,7 @@ jobs:
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           SIMULATE_TWITCH: ${{ inputs.simulate_twitch && '1' || '0' }}
+          POST_ALL_MERCH: ${{ inputs.post_all_merch && '1' || '0' }}
         run: node src/index.js
 
       - name: Commit state changes

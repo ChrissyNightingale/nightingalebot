@@ -461,6 +461,29 @@ async function checkMerch(state) {
 
 // ------------------------------------------------------------------- Main ---
 
+async function postAllCurrentMerch() {
+  const slugs = await fetchProductSlugs();
+  // Post in storefront display order: sitemap lists newest first; flip so the
+  // channel reads chronologically (oldest → newest) the way a feed scrolls.
+  for (const slug of slugs.slice().reverse()) {
+    const meta = await fetchProductMeta(slug);
+    const priceLine = meta.price ? `**$${meta.price}** ${meta.currency}` : null;
+    await discordPost(cfg.merchChannelId, {
+      content: `🛍️ **[${meta.title}](${meta.url})**`,
+      embed: {
+        url: meta.url,
+        description: priceLine || undefined,
+        color: cfg.colors.merch,
+        image: meta.image ? { url: meta.image } : undefined,
+        footer: { text: 'chrissynightingale.com' },
+      },
+    });
+    console.log(`[merch:bulk] posted ${slug}`);
+    // Stay well under Discord's per-channel rate limit (5 msg / 5 sec).
+    await new Promise((r) => setTimeout(r, 600));
+  }
+}
+
 async function simulateTwitchLive() {
   await discordPost(cfg.twitchChannelId, {
     content: '🔴 Chrissy Nightingale is LIVE on Twitch! _(simulation)_',
@@ -480,6 +503,13 @@ async function main() {
   // Twitch posting path lands without waiting for a real stream.
   if (process.env.SIMULATE_TWITCH === '1') {
     await simulateTwitchLive();
+    return;
+  }
+
+  // One-off backfill: post every current product on the storefront to the
+  // merch channel. Bypasses state (does not record posted slugs).
+  if (process.env.POST_ALL_MERCH === '1') {
+    await postAllCurrentMerch();
     return;
   }
 
