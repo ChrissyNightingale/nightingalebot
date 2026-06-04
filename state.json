@@ -44,5 +44,16 @@
   "twitch": {
     "isLive": false,
     "lastStreamId": null
+  },
+  "merch": {
+    "lastProductSlugs": [
+      "womens-cut-t-shirt-black",
+      "unisex-pullover-hoodie-maroon",
+      "unisex-pullover-hoodie-black",
+      "womens-cut-t-shirt-pink",
+      "stainless-steel-water-bottle",
+      "fleece-zip-up-hoodie-charcoal",
+      "garment-dyed-heavyweight-t-shirt-black"
+    ]
   }
 }
