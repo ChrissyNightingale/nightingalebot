@@ -42,10 +42,13 @@ const cfg = {
     },
     notifications: {
       channelId: '1476730021837144124',
+      // Custom emojis are stored as "name:id" — that's the form the Discord
+      // API expects in reaction PUT/GET URLs. In message content we render
+      // them as <:name:id>.
       map: [
         { emoji: '📣', roleId: '1507600835146682439', label: 'Announcements' },
-        { emoji: '🔴', roleId: '1508008798927847425', label: 'YouTube' },
-        { emoji: '🟣', roleId: '1507600833645121606', label: 'Livestreams' },
+        { emoji: 'youtube:1511979995461980160', roleId: '1508008798927847425', label: 'YouTube' },
+        { emoji: 'twitch:1511979942135599177', roleId: '1507600833645121606', label: 'Livestreams' },
         { emoji: '🚀', roleId: '1507600825688527019', label: 'Product Updates' },
       ],
     },
@@ -701,6 +704,10 @@ function buildInstrumentsBody() {
 }
 
 function buildNotificationsBody() {
+  // Render custom emojis as <:name:id>; the map stores them in name:id form.
+  const renderEmoji = (e) => (/^\w+:\d+$/.test(e) ? `<:${e}>` : e);
+  const yt = renderEmoji('youtube:1511979995461980160');
+  const tw = renderEmoji('twitch:1511979942135599177');
   return [
     `📬 **Notification preferences**`,
     ``,
@@ -709,8 +716,8 @@ function buildNotificationsBody() {
     `👉 To select what you want to be notified about, just hit the reaction(s) below! You can pick one or all of the options, it's up to you!`,
     ``,
     `📣 — **Announcement notifications**: Be the first to know about important updates and news!`,
-    `🔴 — **YouTube notifications**: Be notified when a new video gets posted, or scheduled!`,
-    `🟣 — **Livestream notifications**: Never miss a moment of our streams, gaming sessions, and more!`,
+    `${yt} — **YouTube notifications**: Be notified when a new video gets posted, or scheduled!`,
+    `${tw} — **Livestream notifications**: Never miss a moment of our streams, gaming sessions, and more!`,
     `🚀 — **Product update notifications**: Stay up-to-date with the latest and greatest from our street team!`,
     ``,
     `Thanks for being part of our community, and we hope to see you around soon! 🎉`,
