@@ -14,9 +14,12 @@
 
 name: NightingaleBot watch
 
+# Schedule removed — the recurring tick now runs in-process on the XP bot
+# (Fly.io, gateway-connected). This workflow stays alive for one-off admin
+# actions only: list_roles, list_channels, list_emojis, post_rules,
+# post_instruments, post_notifications, simulate_twitch, post_all_merch,
+# welcome_user.
 on:
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       simulate_twitch:
