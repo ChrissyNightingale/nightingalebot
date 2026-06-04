@@ -351,7 +351,28 @@ async function checkTwitch(state) {
 
 // ------------------------------------------------------------------- Main ---
 
+async function simulateTwitchLive() {
+  await discordPost(cfg.twitchChannelId, {
+    content: '🔴 Chrissy Nightingale is LIVE on Twitch! _(simulation)_',
+    embed: {
+      title: '[TEST] Simulated stream — wiring check',
+      url: `https://twitch.tv/${cfg.twitchLogin}`,
+      description: 'Streaming **Just Chatting** _(simulation — not actually live)_',
+      color: cfg.colors.twitch,
+      footer: { text: 'Twitch · simulation' },
+    },
+  });
+  console.log('[twitch] simulation posted');
+}
+
 async function main() {
+  // One-off simulation path: workflow_dispatch can flip this to verify the
+  // Twitch posting path lands without waiting for a real stream.
+  if (process.env.SIMULATE_TWITCH === '1') {
+    await simulateTwitchLive();
+    return;
+  }
+
   const state = await loadState();
   const tasks = [
     ['youtube', checkYouTube],
