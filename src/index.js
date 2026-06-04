@@ -100,46 +100,75 @@ async function resolveYouTubeChannelId(state) {
 }
 
 async function checkYouTube(state) {
-  const channelId = await resolveYouTubeChannelId(state);
-  const res = await fetch(
-    `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`,
-    { headers: { 'User-Agent': 'Mozilla/5.0 NightingaleBot' } }
-  );
-  if (!res.ok) throw new Error(`YouTube RSS ${res.status}`);
-  const xml = await res.text();
+  // Resolve channel ID once (cached in state). We don't actually use the RSS
+  // feed — YouTube's /feeds/videos.xml endpoint started returning 404 in 2026
+  // for arbitrary channels. Instead, scrape the /videos HTML page; the page
+  // ships ytInitialData embedded as JSON which lists every upload with its
+  // ID + title in newest-first order.
+  await resolveYouTubeChannelId(state);
 
-  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((m) => m[1]);
+  const res = await fetch(
+    `https://www.youtube.com/@${cfg.youtubeHandle}/videos`,
+    {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`YouTube /videos page ${res.status}`);
+  const html = await res.text();
+
+  // Each video on the page renders via a videoRenderer JSON block. Extract
+  // {videoId, title} pairs. Titles can come as runs[].text or simpleText
+  // depending on locale/state, so handle both.
+  const re =
+    /"videoRenderer":\{"videoId":"([A-Za-z0-9_-]{11})"[\s\S]*?"title":\{(?:"runs":\[\{"text":"|"simpleText":")((?:[^"\\]|\\.)*)"/g;
+  const items = [];
+  const seenThisPass = new Set();
+  let m;
+  while ((m = re.exec(html))) {
+    const vid = m[1];
+    if (seenThisPass.has(vid)) continue;
+    seenThisPass.add(vid);
+    // Unescape common JSON sequences in the title.
+    const title = m[2]
+      .replace(/\\u0026/g, '&')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+    items.push({ vid, title });
+  }
+  if (items.length === 0) throw new Error('YouTube scrape: no videos found');
+
   const seen = new Set(state.youtube.lastVideoIds);
   const isSeed = state.youtube.lastVideoIds.length === 0;
   const newItems = [];
 
-  for (const e of entries) {
-    const vid = (e.match(/<yt:videoId>([^<]+)<\/yt:videoId>/) || [])[1];
-    if (!vid || seen.has(vid)) continue;
-    const title = (e.match(/<title>([^<]+)<\/title>/) || [])[1];
-    const link = (e.match(/<link rel="alternate" href="([^"]+)"/) || [])[1];
-    const published = (e.match(/<published>([^<]+)<\/published>/) || [])[1];
-    const thumb = (e.match(/<media:thumbnail url="([^"]+)"/) || [])[1];
-    if (!isSeed) newItems.push({ vid, title, link, published, thumb });
-    state.youtube.lastVideoIds.push(vid);
+  // items[0] is newest; iterate and record everything, queue posts only for
+  // truly new ones on non-seed runs.
+  for (const it of items) {
+    if (seen.has(it.vid)) continue;
+    if (!isSeed) newItems.push(it);
+    state.youtube.lastVideoIds.push(it.vid);
   }
-  state.youtube.lastVideoIds = state.youtube.lastVideoIds.slice(-30);
+  state.youtube.lastVideoIds = state.youtube.lastVideoIds.slice(-50);
 
   if (isSeed) {
-    console.log(`[youtube] seeded ${entries.length} videos (no posts on first run)`);
+    console.log(`[youtube] seeded ${items.length} videos (no posts on first run)`);
     return;
   }
 
-  // Post oldest -> newest so the channel reads in publish order.
+  // Post oldest -> newest so the Discord channel reads in publish order.
   for (const v of newItems.reverse()) {
     await discordPost(cfg.musicChannelId, {
       content: '🎬 New video from Chrissy Nightingale!',
       embed: {
         title: v.title,
-        url: v.link,
+        url: `https://www.youtube.com/watch?v=${v.vid}`,
         color: cfg.colors.youtube,
-        image: v.thumb ? { url: v.thumb } : undefined,
-        timestamp: v.published,
+        image: { url: `https://i.ytimg.com/vi/${v.vid}/hqdefault.jpg` },
         footer: { text: 'YouTube' },
       },
     });
