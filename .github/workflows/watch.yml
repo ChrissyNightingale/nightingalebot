@@ -34,6 +34,11 @@ on:
         required: false
         default: false
         type: boolean
+      list_channels:
+        description: 'One-off: dump guild channel IDs + names to logs.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -63,6 +68,7 @@ jobs:
           SIMULATE_TWITCH: ${{ inputs.simulate_twitch && '1' || '0' }}
           POST_ALL_MERCH: ${{ inputs.post_all_merch && '1' || '0' }}
           LIST_ROLES: ${{ inputs.list_roles && '1' || '0' }}
+          LIST_CHANNELS: ${{ inputs.list_channels && '1' || '0' }}
         run: node src/index.js
 
       - name: Commit state changes

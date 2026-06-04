@@ -485,6 +485,24 @@ async function checkMerch(state) {
 
 // ------------------------------------------------------------------- Main ---
 
+async function listGuildChannels() {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${cfg.guildId}/channels`,
+    {
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`Discord channels ${res.status}: ${await res.text()}`);
+  const channels = await res.json();
+  for (const c of channels) {
+    console.log(`[channel] ${c.id}  type=${c.type}  ${c.name}`);
+  }
+}
+
 async function listGuildRoles() {
   const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
   const res = await fetch(
@@ -552,6 +570,12 @@ async function main() {
   // One-off: dump every guild role + ID + mentionable flag to logs.
   if (process.env.LIST_ROLES === '1') {
     await listGuildRoles();
+    return;
+  }
+
+  // One-off: dump every guild channel + ID + type to logs.
+  if (process.env.LIST_CHANNELS === '1') {
+    await listGuildChannels();
     return;
   }
 
