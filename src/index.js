@@ -107,40 +107,87 @@ async function checkYouTube(state) {
   // ID + title in newest-first order.
   await resolveYouTubeChannelId(state);
 
-  const res = await fetch(
+  const channelId = state.youtube.channelId;
+  // Try @handle/videos first, then /channel/UC.../videos as a fallback. GH
+  // Actions runner IPs are sometimes shown a different layout than logged-in
+  // users, and one URL form may carry the data while the other doesn't.
+  const urls = [
     `https://www.youtube.com/@${cfg.youtubeHandle}/videos`,
-    {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    }
-  );
-  if (!res.ok) throw new Error(`YouTube /videos page ${res.status}`);
-  const html = await res.text();
+    `https://www.youtube.com/channel/${channelId}/videos`,
+  ];
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    // CONSENT=YES+ skips YouTube's EU/datacenter consent interstitial that
+    // otherwise replaces the page body with a consent gate.
+    Cookie: 'CONSENT=YES+1; PREF=hl=en&gl=US',
+  };
 
-  // Each video on the page renders via a videoRenderer JSON block. Extract
-  // {videoId, title} pairs. Titles can come as runs[].text or simpleText
-  // depending on locale/state, so handle both.
-  const re =
-    /"videoRenderer":\{"videoId":"([A-Za-z0-9_-]{11})"[\s\S]*?"title":\{(?:"runs":\[\{"text":"|"simpleText":")((?:[^"\\]|\\.)*)"/g;
+  let html = '';
+  let lastErr = null;
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers });
+      if (!r.ok) { lastErr = `HTTP ${r.status} on ${url}`; continue; }
+      html = await r.text();
+      // Quick sanity: must contain at least one videoId substring to be useful.
+      if (/"videoId":"[A-Za-z0-9_-]{11}"/.test(html)) break;
+      lastErr = `no videoId tokens on ${url} (size=${html.length})`;
+      html = '';
+    } catch (e) {
+      lastErr = `${url}: ${e.message}`;
+    }
+  }
+  if (!html) throw new Error(`YouTube scrape failed: ${lastErr}`);
+
+  // Pass 1: pair videoId with title via videoRenderer / gridVideoRenderer
+  // / richItemRenderer JSON blocks. Titles can come as runs[].text or
+  // simpleText depending on layout.
   const items = [];
   const seenThisPass = new Set();
+  const titleRe =
+    /"(?:videoRenderer|gridVideoRenderer)":\{"videoId":"([A-Za-z0-9_-]{11})"[\s\S]{0,2000}?"title":\{(?:"runs":\[\{"text":"|"simpleText":")((?:[^"\\]|\\.)*)"/g;
   let m;
-  while ((m = re.exec(html))) {
+  while ((m = titleRe.exec(html))) {
     const vid = m[1];
     if (seenThisPass.has(vid)) continue;
     seenThisPass.add(vid);
-    // Unescape common JSON sequences in the title.
     const title = m[2]
       .replace(/\\u0026/g, '&')
       .replace(/\\"/g, '"')
       .replace(/\\\\/g, '\\');
     items.push({ vid, title });
   }
-  if (items.length === 0) throw new Error('YouTube scrape: no videos found');
+
+  // Pass 2 fallback: pick up any remaining videoIds we missed and look up
+  // titles via oembed (1 cheap HTTP per missed video, rarely runs).
+  const allIds = [...html.matchAll(/"videoId":"([A-Za-z0-9_-]{11})"/g)]
+    .map((x) => x[1])
+    .filter((v, i, a) => a.indexOf(v) === i);
+  for (const vid of allIds) {
+    if (seenThisPass.has(vid)) continue;
+    seenThisPass.add(vid);
+    let title = vid;
+    try {
+      const oe = await fetch(
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${vid}&format=json`,
+        { headers: { 'User-Agent': headers['User-Agent'] } }
+      );
+      if (oe.ok) {
+        const j = await oe.json();
+        if (j.title) title = j.title;
+      }
+    } catch { /* keep id as title fallback */ }
+    items.push({ vid, title });
+  }
+
+  if (items.length === 0) {
+    throw new Error(
+      `YouTube scrape: 0 videos parsed (htmlSize=${html.length}, hasVideoId=${/"videoId":/.test(html)})`
+    );
+  }
 
   const seen = new Set(state.youtube.lastVideoIds);
   const isSeed = state.youtube.lastVideoIds.length === 0;
