@@ -193,12 +193,17 @@ async function checkYouTube(state) {
   const isSeed = state.youtube.lastVideoIds.length === 0;
   const newItems = [];
 
-  // items[0] is newest; iterate and record everything, queue posts only for
-  // truly new ones on non-seed runs.
+  // items[0] is newest. On a seed run we record everything and skip posting;
+  // on a normal run we only record IDs *after* a successful Discord post, so
+  // that a transient Discord failure (e.g. permission glitch) leaves the item
+  // eligible for retry on the next tick instead of silently swallowing it.
   for (const it of items) {
     if (seen.has(it.vid)) continue;
-    if (!isSeed) newItems.push(it);
-    state.youtube.lastVideoIds.push(it.vid);
+    if (isSeed) {
+      state.youtube.lastVideoIds.push(it.vid);
+    } else {
+      newItems.push(it);
+    }
   }
   state.youtube.lastVideoIds = state.youtube.lastVideoIds.slice(-50);
 
@@ -208,6 +213,7 @@ async function checkYouTube(state) {
   }
 
   // Post oldest -> newest so the Discord channel reads in publish order.
+  // Record each ID only after the post succeeds.
   for (const v of newItems.reverse()) {
     await discordPost(cfg.musicChannelId, {
       content: '🎬 New video from Chrissy Nightingale!',
@@ -219,8 +225,10 @@ async function checkYouTube(state) {
         footer: { text: 'YouTube' },
       },
     });
+    state.youtube.lastVideoIds.push(v.vid);
     console.log(`[youtube] posted ${v.vid}`);
   }
+  state.youtube.lastVideoIds = state.youtube.lastVideoIds.slice(-50);
 }
 
 // ---------------------------------------------------------------- Spotify ---
@@ -254,8 +262,11 @@ async function checkSpotify(state) {
 
   for (const a of items) {
     if (seen.has(a.id)) continue;
-    if (!isSeed) newAlbums.push(a);
-    state.spotify.lastAlbumIds.push(a.id);
+    if (isSeed) {
+      state.spotify.lastAlbumIds.push(a.id);
+    } else {
+      newAlbums.push(a);
+    }
   }
   state.spotify.lastAlbumIds = state.spotify.lastAlbumIds.slice(-100);
 
@@ -264,6 +275,8 @@ async function checkSpotify(state) {
     return;
   }
 
+  // Only mark an ID as seen after the post lands, so a Discord hiccup doesn't
+  // silently swallow the announcement.
   for (const a of newAlbums.reverse()) {
     const img = a.images?.[0]?.url;
     const isSingle = a.album_type === 'single';
@@ -278,8 +291,10 @@ async function checkSpotify(state) {
         footer: { text: 'Spotify' },
       },
     });
+    state.spotify.lastAlbumIds.push(a.id);
     console.log(`[spotify] posted ${a.id}`);
   }
+  state.spotify.lastAlbumIds = state.spotify.lastAlbumIds.slice(-100);
 }
 
 // ----------------------------------------------------------------- Twitch ---
