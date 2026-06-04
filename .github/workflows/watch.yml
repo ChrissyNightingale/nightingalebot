@@ -54,6 +54,16 @@ on:
         required: false
         default: false
         type: boolean
+      post_instruments:
+        description: 'One-off: post the instruments reaction-role message to #reaction-roles.'
+        required: false
+        default: false
+        type: boolean
+      post_notifications:
+        description: 'One-off: post the notifications reaction-role message to #reaction-roles.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -87,6 +97,8 @@ jobs:
           LIST_EMOJIS: ${{ inputs.list_emojis && '1' || '0' }}
           WELCOME_USER: ${{ inputs.welcome_user }}
           POST_RULES: ${{ inputs.post_rules && '1' || '0' }}
+          POST_INSTRUMENTS: ${{ inputs.post_instruments && '1' || '0' }}
+          POST_NOTIFICATIONS: ${{ inputs.post_notifications && '1' || '0' }}
         run: node src/index.js
 
       - name: Commit state changes

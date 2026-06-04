@@ -20,6 +20,33 @@ const cfg = {
   generalChannelId: '1475433666682290240',
   rulesChannelId: '1476202330222231675',
   verifiedRoleId: '1476268190454513898',
+  // Two reaction-role messages live in #reaction-roles. Each entry lists the
+  // emoji -> role pairs that the bot keeps in sync (react grants, unreact
+  // revokes — but ONLY for users who have ever reacted on this message; users
+  // who hold the role via another path are untouched).
+  reactionGroups: {
+    instruments: {
+      channelId: '1476730021837144124',
+      map: [
+        { emoji: '🎤', roleId: '1476730635220549832', label: 'Vocalist' },
+        { emoji: '🎸', roleId: '1476730673531195482', label: 'Guitar / Bass' },
+        { emoji: '🥁', roleId: '1476730675888652409', label: 'Drummer' },
+        { emoji: '🎻', roleId: '1476730677922889862', label: 'Strings' },
+        { emoji: '🎺', roleId: '1476730683316768848', label: 'Brass' },
+        { emoji: '🎹', roleId: '1476732023803740180', label: 'Piano / Keys' },
+        { emoji: '🎵', roleId: '1476823177643429898', label: "Don't play, just vibe" },
+      ],
+    },
+    notifications: {
+      channelId: '1476730021837144124',
+      map: [
+        { emoji: '📣', roleId: '1507600835146682439', label: 'Announcements' },
+        { emoji: '🔴', roleId: '1508008798927847425', label: 'YouTube' },
+        { emoji: '🟣', roleId: '1507600833645121606', label: 'Livestreams' },
+        { emoji: '🚀', roleId: '1507600825688527019', label: 'Product Updates' },
+      ],
+    },
+  },
   spotifyArtistId: '0eIGTeyCGI7ztWfLBd0v4Y',
   youtubeHandle: 'ChrissyNightingale',
   twitchLogin: 'chrissynightingale',
@@ -59,6 +86,10 @@ const DEFAULT_STATE = {
   verified: { knownMemberIds: [] },
   joins: { knownMemberIds: [] },
   rules: { messageId: null },
+  reactionRoles: {
+    instruments: { messageId: null, lastReactors: {} },
+    notifications: { messageId: null, lastReactors: {} },
+  },
 };
 
 async function loadState() {
@@ -72,6 +103,11 @@ async function loadState() {
     s.verified ??= { knownMemberIds: [] };
     s.joins ??= { knownMemberIds: [] };
     s.rules ??= { messageId: null };
+    s.reactionRoles ??= {};
+    s.reactionRoles.instruments ??= { messageId: null, lastReactors: {} };
+    s.reactionRoles.notifications ??= { messageId: null, lastReactors: {} };
+    s.reactionRoles.instruments.lastReactors ??= {};
+    s.reactionRoles.notifications.lastReactors ??= {};
     s.youtube.lastVideoIds ??= [];
     s.spotify.lastAlbumIds ??= [];
     s.merch.lastProductSlugs ??= [];
@@ -649,6 +685,185 @@ async function checkRulesReactions(state) {
   }
 }
 
+// -------------------------------------------------------- Reaction roles ---
+
+function buildInstrumentsBody() {
+  const g = cfg.reactionGroups.instruments;
+  return [
+    `🎶 **What instrument do you play?**`,
+    `React below — pick as many as fit.`,
+    ``,
+    ...g.map.map((e) => `${e.emoji} — **${e.label}**`),
+  ].join('\n');
+}
+
+function buildNotificationsBody() {
+  return [
+    `📬 **Notification preferences**`,
+    ``,
+    `We want to make sure you're always in the loop for the latest and greatest on our server. That's why we've set up some awesome notifications just for you!`,
+    ``,
+    `👉 To select what you want to be notified about, just hit the reaction(s) below! You can pick one or all of the options, it's up to you!`,
+    ``,
+    `📣 — **Announcement notifications**: Be the first to know about important updates and news!`,
+    `🔴 — **YouTube notifications**: Be notified when a new video gets posted, or scheduled!`,
+    `🟣 — **Livestream notifications**: Never miss a moment of our streams, gaming sessions, and more!`,
+    `🚀 — **Product update notifications**: Stay up-to-date with the latest and greatest from our street team!`,
+    ``,
+    `Thanks for being part of our community, and we hope to see you around soon! 🎉`,
+  ].join('\n');
+}
+
+async function postReactionRoleMessage(groupKey, state) {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const group = cfg.reactionGroups[groupKey];
+  if (!group) throw new Error(`unknown reaction group: ${groupKey}`);
+  const content =
+    groupKey === 'instruments' ? buildInstrumentsBody() : buildNotificationsBody();
+
+  const postRes = await fetch(
+    `https://discord.com/api/v10/channels/${group.channelId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+    }
+  );
+  if (!postRes.ok) {
+    throw new Error(`reaction-role post ${postRes.status}: ${await postRes.text()}`);
+  }
+  const msg = await postRes.json();
+
+  // Seed every reaction so users can one-tap.
+  for (const e of group.map) {
+    const r = await fetch(
+      `https://discord.com/api/v10/channels/${group.channelId}/messages/${msg.id}/reactions/${encodeURIComponent(e.emoji)}/@me`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bot ${token}`,
+          'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+        },
+      }
+    );
+    if (!r.ok) {
+      console.warn(
+        `[reaction-roles:${groupKey}] could not seed ${e.emoji} (${r.status}): ${await r.text()}`
+      );
+    }
+    // Stay under the per-channel reaction rate limit.
+    await new Promise((res) => setTimeout(res, 250));
+  }
+
+  state.reactionRoles[groupKey].messageId = msg.id;
+  state.reactionRoles[groupKey].lastReactors = {};
+  console.log(`[reaction-roles:${groupKey}] posted message ${msg.id}`);
+}
+
+async function removeRole(userId, roleId) {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${cfg.guildId}/members/${userId}/roles/${roleId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  return res.status;
+}
+
+async function addRole(userId, roleId) {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${cfg.guildId}/members/${userId}/roles/${roleId}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  return res.status;
+}
+
+async function checkReactionRoleGroup(state, groupKey) {
+  const group = cfg.reactionGroups[groupKey];
+  const stored = state.reactionRoles[groupKey];
+  if (!stored.messageId) return;
+
+  for (const { emoji, roleId, label } of group.map) {
+    let reactors;
+    try {
+      reactors = await fetchReactionUsers(group.channelId, stored.messageId, emoji);
+    } catch (e) {
+      if (/40[34]/.test(e.message)) {
+        console.warn(
+          `[reaction-roles:${groupKey}] message gone (${e.message}) — clearing state`
+        );
+        stored.messageId = null;
+        stored.lastReactors = {};
+        return;
+      }
+      console.error(`[reaction-roles:${groupKey}:${emoji}] ${e.message}`);
+      continue;
+    }
+
+    const currentIds = reactors.filter((u) => !u.bot).map((u) => u.id);
+    const currentSet = new Set(currentIds);
+    const previousSet = new Set(stored.lastReactors[emoji] || []);
+
+    // Newly added: in current, not in previous → grant role.
+    for (const id of currentIds) {
+      if (previousSet.has(id)) continue;
+      const status = await addRole(id, roleId);
+      if (status === 204) {
+        console.log(
+          `[reaction-roles:${groupKey}] +${label} for ${id}`
+        );
+      } else if (status === 403) {
+        console.error(
+          `[reaction-roles:${groupKey}] 403 granting ${label} to ${id} — bot needs Manage Roles and a higher role than ${label}`
+        );
+      } else {
+        console.log(
+          `[reaction-roles:${groupKey}] grant ${id} ${label} -> HTTP ${status}`
+        );
+      }
+    }
+
+    // Newly removed: in previous, not in current → revoke role.
+    for (const id of previousSet) {
+      if (currentSet.has(id)) continue;
+      const status = await removeRole(id, roleId);
+      if (status === 204) {
+        console.log(
+          `[reaction-roles:${groupKey}] -${label} for ${id}`
+        );
+      } else {
+        console.log(
+          `[reaction-roles:${groupKey}] revoke ${id} ${label} -> HTTP ${status}`
+        );
+      }
+    }
+
+    stored.lastReactors[emoji] = currentIds;
+  }
+}
+
+async function checkReactionRoles(state) {
+  for (const groupKey of Object.keys(cfg.reactionGroups)) {
+    await checkReactionRoleGroup(state, groupKey);
+  }
+}
+
 // --------------------------------------------------------- Join welcome ---
 
 async function checkJoinWelcome(state) {
@@ -929,6 +1144,22 @@ async function main() {
     return;
   }
 
+  // One-off: post (or re-post) the instruments reaction-role message.
+  if (process.env.POST_INSTRUMENTS === '1') {
+    const s = await loadState();
+    await postReactionRoleMessage('instruments', s);
+    await saveState(s);
+    return;
+  }
+
+  // One-off: post (or re-post) the notifications reaction-role message.
+  if (process.env.POST_NOTIFICATIONS === '1') {
+    const s = await loadState();
+    await postReactionRoleMessage('notifications', s);
+    await saveState(s);
+    return;
+  }
+
   // One-off: dump every guild role + ID + mentionable flag to logs.
   if (process.env.LIST_ROLES === '1') {
     await listGuildRoles();
@@ -964,6 +1195,7 @@ async function main() {
     // Grant @Verified to anyone who reacted to the rules before the verified
     // check runs, so newly-granted members get welcomed in the same tick.
     ['rules', checkRulesReactions],
+    ['reaction-roles', checkReactionRoles],
     ['verified', checkVerifiedWelcome],
   ];
 
