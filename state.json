@@ -219,7 +219,13 @@
   "reactionRoles": {
     "instruments": {
       "messageId": "1511980882792153188",
-      "lastReactors": {}
+      "lastReactors": {
+        "🎤": [],
+        "🎸": [],
+        "🥁": [],
+        "🎻": [],
+        "🎺": []
+      }
     },
     "notifications": {
       "messageId": "1511981028389032008",
