@@ -28,6 +28,15 @@ const cfg = {
     release: 0xFF3366,
     merch: 0xFFB400,
   },
+  // Role IDs to ping per event type. Roles are non-mentionable in the guild,
+  // but allowed_mentions.roles bypasses that for the bot. If pings don't land,
+  // grant the NightingaleBot role the "Mention @everyone, @here, and All Roles"
+  // permission in the guild.
+  roles: {
+    announcements: '1507600835146682439',
+    livestreams: '1507600833645121606',
+    youtube: '1508008798927847425',
+  },
 };
 
 const env = (k) => {
@@ -66,14 +75,24 @@ async function saveState(s) {
 
 // ---------------------------------------------------------------- Discord ---
 
-async function discordPost(channelId, { content, embed, mentionEveryone = false }) {
+async function discordPost(
+  channelId,
+  { content, embed, mentionEveryone = false, mentionRoles = [] }
+) {
   const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
-  const body = {
-    content: mentionEveryone
-      ? `@everyone${content ? '\n' + content : ''}`
-      : content || '',
-    allowed_mentions: mentionEveryone ? { parse: ['everyone'] } : { parse: [] },
-  };
+  // Prepend role pings to the message body so the role rendering sits above
+  // the embed. allowed_mentions.roles lets the bot ping even non-mentionable
+  // roles without unlocking them for regular users.
+  const rolePrefix = mentionRoles.map((id) => `<@&${id}>`).join(' ');
+  let body_content = content || '';
+  if (rolePrefix) body_content = `${rolePrefix}${body_content ? ' ' + body_content : ''}`;
+  if (mentionEveryone) body_content = `@everyone${body_content ? '\n' + body_content : ''}`;
+
+  const allowed_mentions = { parse: [] };
+  if (mentionEveryone) allowed_mentions.parse = ['everyone'];
+  if (mentionRoles.length) allowed_mentions.roles = mentionRoles;
+
+  const body = { content: body_content, allowed_mentions };
   if (embed) body.embeds = [embed];
 
   const res = await fetch(
@@ -228,6 +247,7 @@ async function checkYouTube(state) {
   for (const v of newItems.reverse()) {
     await discordPost(cfg.musicChannelId, {
       content: '🎬 New video from Chrissy Nightingale!',
+      mentionRoles: [cfg.roles.youtube],
       embed: {
         title: v.title,
         url: `https://www.youtube.com/watch?v=${v.vid}`,
@@ -293,6 +313,7 @@ async function checkSpotify(state) {
     const isSingle = a.album_type === 'single';
     await discordPost(cfg.musicChannelId, {
       content: '🔥 New release from Chrissy Nightingale!',
+      mentionRoles: [cfg.roles.announcements],
       embed: {
         title: a.name,
         url: a.external_urls?.spotify || `https://open.spotify.com/album/${a.id}`,
@@ -342,6 +363,7 @@ async function checkTwitch(state) {
       .replace('{height}', '720');
     await discordPost(cfg.twitchChannelId, {
       content: '🔴 Chrissy Nightingale is LIVE on Twitch!',
+      mentionRoles: [cfg.roles.livestreams],
       embed: {
         title: live.title || 'Live now',
         url: `https://twitch.tv/${cfg.twitchLogin}`,
@@ -505,6 +527,7 @@ async function postAllCurrentMerch() {
 async function simulateTwitchLive() {
   await discordPost(cfg.twitchChannelId, {
     content: '🔴 Chrissy Nightingale is LIVE on Twitch! _(simulation)_',
+    mentionRoles: [cfg.roles.livestreams],
     embed: {
       title: '[TEST] Simulated stream — wiring check',
       url: `https://twitch.tv/${cfg.twitchLogin}`,
