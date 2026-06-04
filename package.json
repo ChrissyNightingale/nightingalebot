@@ -1,0 +1,13 @@
+{
+  "name": "nightingalebot",
+  "version": "0.1.0",
+  "description": "Watches Spotify / YouTube / Twitch for Chrissy Nightingale and posts new releases & live streams to Discord.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "watch": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

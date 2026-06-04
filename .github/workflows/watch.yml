@@ -1,0 +1,59 @@
+# NightingaleBot watch loop.
+#
+# Runs every 10 minutes via cron, polls Spotify / YouTube / Twitch for new
+# activity from Chrissy Nightingale, and posts to the appropriate Discord
+# channels. State (last-seen IDs, twitch live flag) is persisted in state.json
+# and committed back to the repo by this workflow.
+#
+# Required repo secrets:
+#   NIGHTINGALE_DISCORD_BOT_TOKEN  — Bot token for the NightingaleBot Discord app.
+#   SPOTIFY_CLIENT_ID              — Spotify Developer app client ID.
+#   SPOTIFY_CLIENT_SECRET          — Spotify Developer app client secret.
+#   TWITCH_CLIENT_ID               — Twitch Developer app client ID.
+#   TWITCH_CLIENT_SECRET           — Twitch Developer app client secret.
+
+name: NightingaleBot watch
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightingalebot-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Run watcher
+        env:
+          NIGHTINGALE_DISCORD_BOT_TOKEN: ${{ secrets.NIGHTINGALE_DISCORD_BOT_TOKEN }}
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+        run: node src/index.js
+
+      - name: Commit state changes
+        run: |
+          git config user.name "nightingalebot[bot]"
+          git config user.email "bot@chrissynightingale.com"
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git add state.json
+            git commit -m "chore: update watcher state [skip ci]"
+            git push
+          else
+            echo "No state changes."
+          fi

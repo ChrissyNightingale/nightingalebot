@@ -1,0 +1,13 @@
+{
+  "youtube": {
+    "channelId": null,
+    "lastVideoIds": []
+  },
+  "spotify": {
+    "lastAlbumIds": []
+  },
+  "twitch": {
+    "isLive": false,
+    "lastStreamId": null
+  }
+}
