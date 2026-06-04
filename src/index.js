@@ -785,6 +785,24 @@ async function checkMerch(state) {
 
 // ------------------------------------------------------------------- Main ---
 
+async function listGuildEmojis() {
+  const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${cfg.guildId}/emojis`,
+    {
+      headers: {
+        Authorization: `Bot ${token}`,
+        'User-Agent': 'NightingaleBot (+https://chrissynightingale.com)',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`Discord emojis ${res.status}: ${await res.text()}`);
+  const emojis = await res.json();
+  for (const e of emojis) {
+    console.log(`[emoji] ${e.id}  :${e.name}:  animated=${!!e.animated}`);
+  }
+}
+
 async function listGuildChannels() {
   const token = env('NIGHTINGALE_DISCORD_BOT_TOKEN');
   const res = await fetch(
@@ -920,6 +938,12 @@ async function main() {
   // One-off: dump every guild channel + ID + type to logs.
   if (process.env.LIST_CHANNELS === '1') {
     await listGuildChannels();
+    return;
+  }
+
+  // One-off: dump every custom emoji + ID + name to logs.
+  if (process.env.LIST_EMOJIS === '1') {
+    await listGuildEmojis();
     return;
   }
 

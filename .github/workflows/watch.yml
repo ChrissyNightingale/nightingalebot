@@ -39,6 +39,11 @@ on:
         required: false
         default: false
         type: boolean
+      list_emojis:
+        description: 'One-off: dump custom emoji IDs + names to logs.'
+        required: false
+        default: false
+        type: boolean
       welcome_user:
         description: 'One-off: send the join-welcome message to a specific username.'
         required: false
@@ -79,6 +84,7 @@ jobs:
           POST_ALL_MERCH: ${{ inputs.post_all_merch && '1' || '0' }}
           LIST_ROLES: ${{ inputs.list_roles && '1' || '0' }}
           LIST_CHANNELS: ${{ inputs.list_channels && '1' || '0' }}
+          LIST_EMOJIS: ${{ inputs.list_emojis && '1' || '0' }}
           WELCOME_USER: ${{ inputs.welcome_user }}
           POST_RULES: ${{ inputs.post_rules && '1' || '0' }}
         run: node src/index.js
