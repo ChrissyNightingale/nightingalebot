@@ -1,0 +1,81 @@
+# Post an arbitrary message to any Discord channel as NightingaleBot.
+#
+# Manually triggered (workflow_dispatch). Use for promos, hype posts, or any
+# one-off announcement to a specific channel. Channel is a required input so
+# this workflow is reusable across every channel in the server.
+#
+# Required repo secret: NIGHTINGALE_DISCORD_BOT_TOKEN (same one watch.yml uses).
+
+name: Post message to Discord
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel_id:
+        description: "Target Discord channel ID."
+        required: true
+        type: string
+      message:
+        description: "Message body. Markdown supported. Use literal \\n for line breaks."
+        required: true
+        type: string
+      mention_everyone:
+        description: "Prepend @everyone and ping the server"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          NIGHTINGALE_DISCORD_BOT_TOKEN: ${{ secrets.NIGHTINGALE_DISCORD_BOT_TOKEN }}
+          CHANNEL_ID: ${{ inputs.channel_id }}
+          MESSAGE: ${{ inputs.message }}
+          MENTION_EVERYONE: ${{ inputs.mention_everyone }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NIGHTINGALE_DISCORD_BOT_TOKEN:-}" ]; then
+            echo "::error::Missing NIGHTINGALE_DISCORD_BOT_TOKEN secret."
+            exit 1
+          fi
+
+          # workflow_dispatch inputs are single-line. Interpret literal \n
+          # in the message as actual newlines.
+          formatted=$(printf '%b' "$MESSAGE")
+
+          if [ "$MENTION_EVERYONE" = "true" ]; then
+            formatted="@everyone"$'\n'"$formatted"
+            allowed_mentions='{"parse":["everyone"]}'
+          else
+            # Lock down mentions when @everyone wasn't explicitly requested,
+            # so a stray @everyone or @here in the body can't ping.
+            allowed_mentions='{"parse":[]}'
+          fi
+
+          if [ ${#formatted} -gt 1990 ]; then
+            formatted="${formatted:0:1987}..."
+          fi
+
+          payload=$(jq -n \
+            --arg content "$formatted" \
+            --argjson am "$allowed_mentions" \
+            '{content: $content, allowed_mentions: $am}')
+
+          http_status=$(curl -sS -o /tmp/discord_resp.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bot $NIGHTINGALE_DISCORD_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: nightingalebot-poster (+https://chrissynightingale.com)" \
+            -d "$payload" \
+            "https://discord.com/api/v10/channels/$CHANNEL_ID/messages")
+
+          if [ "$http_status" -ge 200 ] && [ "$http_status" -lt 300 ]; then
+            echo "Posted message to channel $CHANNEL_ID."
+          else
+            echo "::error::Discord rejected post (HTTP $http_status)"
+            cat /tmp/discord_resp.json
+            exit 1
+          fi
