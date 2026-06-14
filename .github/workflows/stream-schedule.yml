@@ -14,6 +14,12 @@ on:
     - cron: "0 16 * * 1"
   workflow_dispatch:
     inputs:
+      mode:
+        description: "post = publish schedule, delete = remove the bot's prior schedule posts"
+        required: false
+        default: post
+        type: choice
+        options: [post, delete]
       mention_role:
         description: "Ping the Livestreams role (turn off for test posts)"
         required: false
@@ -32,6 +38,7 @@ jobs:
         env:
           NIGHTINGALE_DISCORD_BOT_TOKEN: ${{ secrets.NIGHTINGALE_DISCORD_BOT_TOKEN }}
           MENTION_ROLE: ${{ inputs.mention_role }}
+          SCHEDULE_MODE: ${{ inputs.mode }}
         run: |
           # Scheduled runs have no input → MENTION_ROLE is empty → keep the
           # script's default role ping. Manual test runs can pass false.

@@ -15,6 +15,44 @@ if (!TOKEN) {
 }
 const CHANNEL = process.env.SCHEDULE_CHANNEL_ID || '1476195529129066721';
 const ROLE = process.env.LIVESTREAM_ROLE_ID ?? '1507600833645121606';
+const REACTION_ROLES = process.env.REACTION_ROLES_CHANNEL_ID || '1476730021837144124';
+const MODE = process.env.SCHEDULE_MODE || 'post';
+
+function discord(path, init = {}) {
+  return fetch(`https://discord.com/api/v10${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bot ${TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'nightingalebot-schedule (+https://chrissynightingale.com)',
+      ...(init.headers || {}),
+    },
+  });
+}
+
+// Cleanup mode: delete this bot's own prior schedule posts from the channel.
+// A bot can delete its own messages without Manage Messages. Scoped tightly to
+// messages it authored whose body carries the schedule header.
+if (MODE === 'delete') {
+  const me = await (await discord('/users/@me')).json();
+  const listRes = await discord(`/channels/${CHANNEL}/messages?limit=30`);
+  if (!listRes.ok) {
+    console.error(`list ${listRes.status}: ${await listRes.text()}`);
+    process.exit(1);
+  }
+  const mine = (await listRes.json()).filter(
+    (m) => m.author?.id === me.id && /WEEKLY STREAM SCHEDULE/.test(m.content || '')
+  );
+  let n = 0;
+  for (const m of mine) {
+    const del = await discord(`/channels/${CHANNEL}/messages/${m.id}`, { method: 'DELETE' });
+    if (del.ok || del.status === 204) n++;
+    else console.error(`delete ${m.id} -> ${del.status}: ${await del.text()}`);
+    await new Promise((r) => setTimeout(r, 400)); // ease off the rate limiter
+  }
+  console.log(`deleted ${n} schedule post(s) from ${CHANNEL}`);
+  process.exit(0);
+}
 
 // America/Los_Angeles UTC offset (ms) at a given instant — DST-aware via Intl.
 function laOffsetMs(date) {
@@ -79,20 +117,15 @@ const content = [
   `🎮 **Star Citizen** — fleet ops, missions, chaos`,
   `🎶 mid-stream music break — **3 songs, viewer's choice** 🔥`,
   `📺 **twitch.tv/chrissynightingale** — follow to catch go-live`,
-  `🔔 grab the **Livestreams** role in #reaction-roles for live pings`,
+  `🔔 grab the **Livestreams** role in <#${REACTION_ROLES}> for live pings`,
   ``,
   `See you in the black. o7`,
 ]
   .filter((x) => x !== null)
   .join('\n');
 
-const res = await fetch(`https://discord.com/api/v10/channels/${CHANNEL}/messages`, {
+const res = await discord(`/channels/${CHANNEL}/messages`, {
   method: 'POST',
-  headers: {
-    Authorization: `Bot ${TOKEN}`,
-    'Content-Type': 'application/json',
-    'User-Agent': 'nightingalebot-schedule (+https://chrissynightingale.com)',
-  },
   body: JSON.stringify({
     content,
     allowed_mentions: ROLE ? { roles: [ROLE] } : { parse: [] },
