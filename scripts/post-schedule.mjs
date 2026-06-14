@@ -116,7 +116,7 @@ const content = [
   ``,
   `🎮 **Star Citizen** — fleet ops, missions, chaos`,
   `🎶 mid-stream music break — **3 songs, viewer's choice** 🔥`,
-  `📺 **twitch.tv/chrissynightingale** — follow to catch go-live`,
+  `📺 **Watch live:** https://twitch.tv/chrissynightingale — follow to catch go-live`,
   `🔔 grab the **Livestreams** role in <#${REACTION_ROLES}> for live pings`,
   ``,
   `See you in the black. o7`,
