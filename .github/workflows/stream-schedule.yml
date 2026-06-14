@@ -1,0 +1,41 @@
+# Weekly stream-schedule announcement.
+#
+# Posts Chrissy's Tue–Fri 9am PT Star Citizen schedule to the schedule channel
+# with Discord dynamic timestamps (auto-localize to each viewer). Computes the
+# current week's real dates on every run, so the timestamps are always correct.
+#
+# Required repo secret: NIGHTINGALE_DISCORD_BOT_TOKEN (same one watch.yml uses).
+
+name: Weekly stream schedule
+
+on:
+  schedule:
+    # Mondays 16:00 UTC ≈ 9am PT (8am in winter) — heads-up before the week.
+    - cron: "0 16 * * 1"
+  workflow_dispatch:
+    inputs:
+      mention_role:
+        description: "Ping the Livestreams role (turn off for test posts)"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Post weekly schedule
+        env:
+          NIGHTINGALE_DISCORD_BOT_TOKEN: ${{ secrets.NIGHTINGALE_DISCORD_BOT_TOKEN }}
+          MENTION_ROLE: ${{ inputs.mention_role }}
+        run: |
+          # Scheduled runs have no input → MENTION_ROLE is empty → keep the
+          # script's default role ping. Manual test runs can pass false.
+          if [ "${MENTION_ROLE}" = "false" ]; then
+            export LIVESTREAM_ROLE_ID=""
+          fi
+          node scripts/post-schedule.mjs
