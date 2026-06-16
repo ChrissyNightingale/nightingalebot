@@ -98,8 +98,8 @@ function ptToday() {
 const t = ptToday();
 const anchor = new Date(Date.UTC(t.y, t.m - 1, t.d, 12));
 const dow = anchor.getUTCDay();
-const labels = ['Tue', 'Wed', 'Thu', 'Fri'];
-const days = [2, 3, 4, 5].map((td) => {
+const labels = ['Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const days = [2, 3, 4, 5, 6].map((td) => {
   const dt = new Date(anchor.getTime() + (td - dow) * 86_400_000);
   return ptUnix(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate(), 9);
 });
