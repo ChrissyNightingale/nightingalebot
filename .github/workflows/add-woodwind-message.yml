@@ -19,7 +19,7 @@ jobs:
           set -euo pipefail
           auth="Authorization: Bot $DISCORD_BOT_TOKEN"
           ua="User-Agent: ng"
-          body=$(printf '%b' '🎶 **What instrument do you play?**\nReact below — pick as many as fit.\n\n🎤 — **Vocalist**\n🎸 — **Guitar / Bass**\n🥁 — **Drummer**\n🎻 — **Strings**\n🎺 — **Brass**\n🎹 — **Piano / Keys**\n🎵 — **Don'\''t play, just vibe**\n🪈 — **Woodwind**')
+          body=$(printf '%b' '🎶 **What instrument do you play?**\nReact below — pick as many as fit.\n\n🎤 — **Vocalist**\n🎸 — **Guitar / Bass**\n🥁 — **Drummer**\n🎻 — **Strings**\n🎺 — **Brass**\n🪈 — **Woodwind**\n🎹 — **Piano / Keys**\n🎵 — **Don'\''t play, just vibe**')
           payload=$(jq -n --arg c "$body" '{content:$c, allowed_mentions:{parse:[]}}')
 
           msgs=$(curl -sS -H "$auth" -H "$ua" "https://discord.com/api/v10/channels/$CH/messages?limit=50")
