@@ -1,0 +1,37 @@
+# One-off: add the Woodwind line to the existing instruments reaction-role
+# message and seed the 🪈 reaction. Edits in place (keeps the message ID so the
+# realtime handler keeps matching).
+
+name: Add Woodwind to instruments message
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Edit message + react
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.NIGHTINGALE_DISCORD_BOT_TOKEN }}
+          CH: "1476730021837144124"
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bot $DISCORD_BOT_TOKEN"
+          ua="User-Agent: ng"
+          body=$(printf '%b' '🎶 **What instrument do you play?**\nReact below — pick as many as fit.\n\n🎤 — **Vocalist**\n🎸 — **Guitar / Bass**\n🥁 — **Drummer**\n🎻 — **Strings**\n🎺 — **Brass**\n🎹 — **Piano / Keys**\n🎵 — **Don'\''t play, just vibe**\n🪈 — **Woodwind**')
+          payload=$(jq -n --arg c "$body" '{content:$c, allowed_mentions:{parse:[]}}')
+
+          msgs=$(curl -sS -H "$auth" -H "$ua" "https://discord.com/api/v10/channels/$CH/messages?limit=50")
+          mid=$(printf '%s' "$msgs" | jq -r '[.[] | select(.content|test("What instrument do you play"))][0].id // empty')
+          if [ -z "$mid" ]; then echo "::error::instruments message not found"; exit 1; fi
+
+          code=$(curl -sS -o /tmp/r.json -w "%{http_code}" -X PATCH -H "$auth" -H "$ua" \
+            -H "Content-Type: application/json" -d "$payload" \
+            "https://discord.com/api/v10/channels/$CH/messages/$mid")
+          echo "edit -> HTTP $code (msg $mid)"
+          [ "$code" -ge 300 ] && cat /tmp/r.json || true
+
+          rcode=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT -H "$auth" -H "$ua" \
+            "https://discord.com/api/v10/channels/$CH/messages/$mid/reactions/%F0%9F%AA%88/@me")
+          echo "react 🪈 -> HTTP $rcode"
