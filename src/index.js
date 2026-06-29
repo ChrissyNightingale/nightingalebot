@@ -38,6 +38,7 @@ const cfg = {
         { emoji: '🎺', roleId: '1476730683316768848', label: 'Brass' },
         { emoji: '🎹', roleId: '1476732023803740180', label: 'Piano / Keys' },
         { emoji: '🎵', roleId: '1476823177643429898', label: "Don't play, just vibe" },
+        { emoji: '🪈', roleId: '1520965562480721930', label: 'Woodwind' },
       ],
     },
     notifications: {
