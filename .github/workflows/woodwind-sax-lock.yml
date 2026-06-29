@@ -1,0 +1,57 @@
+# One-off: switch Woodwind to 🎷 on the instruments message, swap the reaction,
+# and lock #reaction-roles so members can only click EXISTING reactions (deny
+# Add Reactions for @everyone, allow it for the bot so it can still seed).
+
+name: Woodwind sax + lock reactions
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Swap emoji + lock channel
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.NIGHTINGALE_DISCORD_BOT_TOKEN }}
+          CH: "1476730021837144124"
+          GUILD: "1475433665537511536"
+          BOT: "1511941013902462986"
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bot $DISCORD_BOT_TOKEN"
+          ua="User-Agent: ng"
+
+          msgs=$(curl -sS -H "$auth" -H "$ua" "https://discord.com/api/v10/channels/$CH/messages?limit=50")
+          mid=$(printf '%s' "$msgs" | jq -r '[.[] | select(.content|test("What instrument do you play"))][0].id // empty')
+          if [ -z "$mid" ]; then echo "::error::instruments message not found"; exit 1; fi
+
+          body=$(printf '%b' '🎶 **What instrument do you play?**\nReact below — pick as many as fit.\n\n🎤 — **Vocalist**\n🎸 — **Guitar / Bass**\n🥁 — **Drummer**\n🎻 — **Strings**\n🎺 — **Brass**\n🎷 — **Woodwind**\n🎹 — **Piano / Keys**\n🎵 — **Don'\''t play, just vibe**')
+          payload=$(jq -n --arg c "$body" '{content:$c, allowed_mentions:{parse:[]}}')
+          curl -sS -o /dev/null -w "edit msg -> %{http_code}\n" -X PATCH -H "$auth" -H "$ua" \
+            -H "Content-Type: application/json" -d "$payload" \
+            "https://discord.com/api/v10/channels/$CH/messages/$mid"
+
+          # seed 🎷, remove 🪈 (bot still has Add Reactions at this point)
+          curl -sS -o /dev/null -w "add sax -> %{http_code}\n" -X PUT -H "$auth" -H "$ua" \
+            "https://discord.com/api/v10/channels/$CH/messages/$mid/reactions/%F0%9F%8E%B7/@me"
+          curl -sS -o /dev/null -w "del flute -> %{http_code}\n" -X DELETE -H "$auth" -H "$ua" \
+            "https://discord.com/api/v10/channels/$CH/messages/$mid/reactions/%F0%9F%AA%88"
+
+          # allow the bot to add reactions in this channel (so future seeds work)
+          curl -sS -o /dev/null -w "bot allow -> %{http_code}\n" -X PUT -H "$auth" -H "$ua" \
+            -H "Content-Type: application/json" -H "X-Audit-Log-Reason: bot keeps add reactions" \
+            -d '{"type":1,"allow":"64","deny":"0"}' \
+            "https://discord.com/api/v10/channels/$CH/permissions/$BOT"
+
+          # deny @everyone Add Reactions (bit 64), preserving other overwrite bits
+          ch=$(curl -sS -H "$auth" -H "$ua" "https://discord.com/api/v10/channels/$CH")
+          eall=$(printf '%s' "$ch" | jq -r --arg g "$GUILD" '([.permission_overwrites[]|select(.id==$g)|.allow]|first)//"0"')
+          edeny=$(printf '%s' "$ch" | jq -r --arg g "$GUILD" '([.permission_overwrites[]|select(.id==$g)|.deny]|first)//"0"')
+          newall=$(( eall & ~64 ))
+          newdeny=$(( edeny | 64 ))
+          curl -sS -o /dev/null -w "everyone lock -> %{http_code}\n" -X PUT -H "$auth" -H "$ua" \
+            -H "Content-Type: application/json" -H "X-Audit-Log-Reason: lock add-reactions in reaction-roles" \
+            -d "{\"type\":0,\"allow\":\"$newall\",\"deny\":\"$newdeny\"}" \
+            "https://discord.com/api/v10/channels/$CH/permissions/$GUILD"
+          echo "everyone allow=$eall->$newall deny=$edeny->$newdeny"
